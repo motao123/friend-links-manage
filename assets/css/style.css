@@ -1,0 +1,42 @@
+#flm-form {
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 20px;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+}
+
+#flm-form label {
+    display: block;
+    margin-top: 10px;
+}
+
+#flm-form input,
+#flm-form textarea {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+}
+
+#flm-form button {
+    margin-top: 15px;
+    padding: 10px 20px;
+    background: #0073aa;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+#flm-form button:hover {
+    background: #005177;
+}
+
+.flm-success {
+    color: green;
+    font-weight: bold;
+}
+
+.flm-error {
+    color: red;
+    font-weight: bold;
+}
