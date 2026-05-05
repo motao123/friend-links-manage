@@ -3,6 +3,15 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// 安全重定向：headers_sent 时用 JS 回退
+function flm_safe_redirect($url) {
+    if (!headers_sent()) {
+        wp_redirect($url);
+    } else {
+        echo '<script>window.location.href="' . esc_js($url) . '";</script>';
+    }
+}
+
 // 友链申请表单短代码
 function flm_frontend_form() {
     $message = null;
@@ -10,7 +19,7 @@ function flm_frontend_form() {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['flm_submit'])) {
         // 蜜罐检查：隐藏字段被填充则为机器人
         if (!empty($_POST['flm_website'])) {
-            wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+            flm_safe_redirect(add_query_arg('flm_status', 'success', get_permalink()));
             exit;
         }
 
@@ -67,9 +76,10 @@ function flm_frontend_form() {
 
                         if ($inserted) {
                             set_transient('flm_rate_' . md5($_SERVER['REMOTE_ADDR']), time(), 60);
-                            wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+                            flm_safe_redirect(add_query_arg('flm_status', 'success', get_permalink()));
                             exit;
                         } else {
+                            error_log('[FLM] 插入失败: ' . $wpdb->last_error);
                             $message = array('type' => 'error', 'text' => '提交失败，请稍后重试！');
                         }
                     }
