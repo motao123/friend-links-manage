@@ -13,6 +13,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// 诊断：确认此文件是否被加载
+file_put_contents(WP_CONTENT_DIR . '/flm-debug.log', date('H:i:s') . " 主文件已加载\n", FILE_APPEND);
+
 define('FLM_VERSION', '2.0');
 define('FLM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('FLM_PLUGIN_URL', plugin_dir_url(__FILE__));
