@@ -1,76 +1,156 @@
 <?php
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+// 友链申请表单短代码
 function flm_frontend_form() {
-    // 初始化消息变量
-    $message = '';
+    $message = null;
 
-    // 处理表单提交
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['flm_submit'])) {
-        // 验证CSRF令牌
+        // 蜜罐检查：隐藏字段被填充则为机器人
+        if (!empty($_POST['flm_website'])) {
+            wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+            exit;
+        }
+
         if (!isset($_POST['flm_nonce']) || !wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
-            $message = '<p class="flm-error">安全验证失败，请重试！</p>';
+            $message = array('type' => 'error', 'text' => '安全验证失败，请重试！');
         } else {
-            // 获取并清理表单数据
-            $name = sanitize_text_field($_POST['flm_name']);
-            $url = esc_url_raw($_POST['flm_url']);
-            $description = sanitize_textarea_field($_POST['flm_description']);
+            $name        = sanitize_text_field($_POST['flm_name']);
+            $url         = esc_url_raw($_POST['flm_url']);
+            $logo_url    = isset($_POST['flm_logo_url']) ? esc_url_raw($_POST['flm_logo_url']) : '';
+            $email       = isset($_POST['flm_email']) ? sanitize_email($_POST['flm_email']) : '';
+            $description = isset($_POST['flm_description']) ? sanitize_textarea_field($_POST['flm_description']) : '';
 
-            // 验证必填字段
-            if (empty($name) || empty($url)) {
-                $message = '<p class="flm-error">请填写所有必填字段！</p>';
-            } elseif (!filter_var($url, FILTER_VALIDATE_URL)) { // 检查URL格式
-                $message = '<p class="flm-error">请输入有效的URL！</p>';
+            // 长度校验
+            if (mb_strlen($name) > 100) {
+                $message = array('type' => 'error', 'text' => '网站名称不能超过100个字符！');
+            } elseif (empty($name) || empty($url)) {
+                $message = array('type' => 'error', 'text' => '请填写所有必填字段！');
+            } elseif (!filter_var($url, FILTER_VALIDATE_URL)) {
+                $message = array('type' => 'error', 'text' => '请输入有效的URL！');
+            } elseif ($logo_url && !filter_var($logo_url, FILTER_VALIDATE_URL)) {
+                $message = array('type' => 'error', 'text' => 'Logo URL 格式不正确！');
+            } elseif ($email && !is_email($email)) {
+                $message = array('type' => 'error', 'text' => '邮箱格式不正确！');
             } else {
-                global $wpdb;
-                $table_name = $wpdb->prefix . 'friend_links';
-
-                // 检查是否已经存在相同的URL
-                $existing_link = $wpdb->get_row($wpdb->prepare(
-                    "SELECT * FROM $table_name WHERE url = %s",
-                    $url
-                ));
-
-                if (!$existing_link) {
-                    // 插入数据
-                    $wpdb->insert(
-                        $table_name,
-                        array(
-                            'name' => $name,
-                            'url' => $url,
-                            'description' => $description,
-                            'status' => 'pending'
-                        ),
-                        array('%s', '%s', '%s', '%s') // 数据类型
-                    );
-
-                    // 重定向到成功页面，避免重复提交
-                    wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
-                    exit;
+                // 频率限制：同一 IP 60秒内只能提交一次
+                $last_submit = get_transient('flm_rate_' . md5($_SERVER['REMOTE_ADDR']));
+                if ($last_submit) {
+                    $message = array('type' => 'error', 'text' => '提交过于频繁，请稍后再试！');
                 } else {
-                    $message = '<p class="flm-error">该URL已经提交过了，请勿重复提交！</p>';
+                    global $wpdb;
+                    $table_name = $wpdb->prefix . 'friend_links';
+
+                    $existing = $wpdb->get_row($wpdb->prepare(
+                        "SELECT * FROM $table_name WHERE url = %s",
+                        $url
+                    ));
+
+                    if ($existing) {
+                        $message = array('type' => 'error', 'text' => '该URL已经提交过了，请勿重复提交！');
+                    } else {
+                        $inserted = $wpdb->insert(
+                            $table_name,
+                            array(
+                                'name'        => $name,
+                                'url'         => $url,
+                                'logo_url'    => $logo_url,
+                                'email'       => $email,
+                                'description' => $description,
+                                'status'      => 'pending',
+                                'created_at'  => current_time('mysql'),
+                            ),
+                            array('%s', '%s', '%s', '%s', '%s', '%s', '%s')
+                        );
+
+                        if ($inserted) {
+                            set_transient('flm_rate_' . md5($_SERVER['REMOTE_ADDR']), time(), 60);
+                            wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+                            exit;
+                        } else {
+                            $message = array('type' => 'error', 'text' => '提交失败，请稍后重试！');
+                        }
+                    }
                 }
             }
         }
     }
 
-    // 显示成功消息（通过重定向后的GET参数）
     if (isset($_GET['flm_status']) && $_GET['flm_status'] === 'success') {
-        $message = '<p class="flm-success">申请已提交，等待管理员审核！</p>';
+        $message = array('type' => 'success', 'text' => '申请已提交，等待管理员审核！');
     }
 
-    // 加载样式和脚本
-    wp_enqueue_style('flm-style', FLM_PLUGIN_URL . 'assets/css/style.css');
-    wp_enqueue_script('flm-script', FLM_PLUGIN_URL . 'assets/js/script.js', array('jquery'), null, true);
+    wp_enqueue_style('flm-style', FLM_PLUGIN_URL . 'assets/css/style.css', array(), FLM_VERSION);
 
-    // 输出消息（如果有）
-    $output = $message;
+    $output = '';
+    if (!empty($message)) {
+        $output .= sprintf(
+            '<div class="flm-toast flm-toast-%s"><span class="flm-toast-icon">%s</span>%s</div>',
+            esc_attr($message['type']),
+            $message['type'] === 'success' ? '&#10003;' : '&#10007;',
+            esc_html($message['text'])
+        );
+    }
 
-    // 加载模板文件
     ob_start();
     include FLM_PLUGIN_DIR . 'templates/friend-links-form.php';
     $output .= ob_get_clean();
 
     return $output;
 }
-
-// 注册短代码
 add_shortcode('friend_links_form', 'flm_frontend_form');
+
+// 友链展示短代码 [friend_links]
+function flm_display_links($atts) {
+    $atts = shortcode_atts(array(
+        'orderby' => 'id',
+        'order'   => 'DESC',
+        'count'   => 0,
+    ), $atts, 'friend_links');
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $allowed_orderby = array('id', 'name', 'created_at');
+    $orderby = in_array($atts['orderby'], $allowed_orderby, true) ? $atts['orderby'] : 'id';
+    $order = strtoupper($atts['order']) === 'ASC' ? 'ASC' : 'DESC';
+    $limit = (int) $atts['count'];
+
+    $sql = "SELECT * FROM $table_name WHERE status = 'approved' ORDER BY $orderby $order";
+    if ($limit > 0) {
+        $sql .= $wpdb->prepare(" LIMIT %d", $limit);
+    }
+
+    $links = $wpdb->get_results($sql);
+    if (!$links) {
+        return '';
+    }
+
+    wp_enqueue_style('flm-style', FLM_PLUGIN_URL . 'assets/css/style.css', array(), FLM_VERSION);
+
+    $html = '<div class="flm-links-grid">';
+    foreach ($links as $link) {
+        $initial = esc_attr(mb_substr($link->name, 0, 1));
+
+        $html .= '<a class="flm-link-card" href="' . esc_url($link->url) . '" target="_blank" rel="noopener">';
+        if ($link->logo_url) {
+            $html .= '<img class="flm-link-logo" src="' . esc_url($link->logo_url) . '" alt="' . esc_attr($link->name) . '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />';
+            $html .= '<div class="flm-link-logo flm-link-logo-fallback" style="display:none">' . esc_html($initial) . '</div>';
+        } else {
+            $html .= '<div class="flm-link-logo flm-link-logo-fallback">' . esc_html($initial) . '</div>';
+        }
+        $html .= '<div class="flm-link-info">';
+        $html .= '<span class="flm-link-name">' . esc_html($link->name) . '</span>';
+        if ($link->description) {
+            $html .= '<span class="flm-link-desc">' . esc_html(mb_strimwidth($link->description, 0, 80, '...')) . '</span>';
+        }
+        $html .= '</div>';
+        $html .= '</a>';
+    }
+    $html .= '</div>';
+
+    return $html;
+}
+add_shortcode('friend_links', 'flm_display_links');

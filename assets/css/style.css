@@ -1,42 +1,217 @@
+/* ============================================
+   友情链接管理器 - 前端样式
+   ============================================ */
+
+/* ---------- 表单 ---------- */
 #flm-form {
     max-width: 600px;
     margin: 20px auto;
-    padding: 20px;
-    border: 1px solid #ddd;
-    background: #f9f9f9;
+    padding: 30px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.flm-field {
+    margin-bottom: 18px;
 }
 
 #flm-form label {
     display: block;
-    margin-top: 10px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+}
+
+.flm-required {
+    color: #d63638;
 }
 
 #flm-form input,
 #flm-form textarea {
     width: 100%;
-    padding: 8px;
-    margin-top: 5px;
+    padding: 10px 14px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.5;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
 }
 
-#flm-form button {
-    margin-top: 15px;
-    padding: 10px 20px;
-    background: #0073aa;
+#flm-form input:focus,
+#flm-form textarea:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.15);
+    outline: none;
+}
+
+#flm-form textarea {
+    resize: vertical;
+}
+
+.flm-submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 600;
     color: #fff;
+    background: linear-gradient(135deg, #0073aa, #005177);
     border: none;
+    border-radius: 6px;
     cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
 }
 
-#flm-form button:hover {
-    background: #005177;
+.flm-submit-btn:hover {
+    opacity: 0.92;
 }
 
-.flm-success {
-    color: green;
+.flm-submit-btn:active {
+    transform: scale(0.98);
+}
+
+.flm-submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 蜜罐字段 */
+.flm-honeypot {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+/* ---------- Toast 通知 ---------- */
+.flm-toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    animation: flm-fadein 0.3s ease;
+}
+
+.flm-toast-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.flm-toast-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.flm-toast-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
     font-weight: bold;
 }
 
-.flm-error {
-    color: red;
-    font-weight: bold;
+@keyframes flm-fadein {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 友链展示网格 ---------- */
+.flm-links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.flm-link-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+    text-decoration: none;
+    color: #333;
+    transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.flm-link-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
+.flm-link-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #f0f0f0;
+}
+
+.flm-link-logo-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #999;
+    background: #e9ecef;
+    text-transform: uppercase;
+}
+
+.flm-link-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.flm-link-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0073aa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flm-link-desc {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 480px) {
+    #flm-form {
+        margin: 10px;
+        padding: 20px;
+    }
+
+    .flm-links-grid {
+        grid-template-columns: 1fr;
+    }
 }
