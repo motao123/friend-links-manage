@@ -1,7 +1,6 @@
 <form id="flm-form" method="post" novalidate>
     <?php wp_nonce_field('flm_submit_form', 'flm_nonce'); ?>
 
-    <!-- 蜜罐字段：对用户隐藏，机器人会填充 -->
     <div class="flm-honeypot" aria-hidden="true">
         <label for="flm_website">网站</label>
         <input type="text" id="flm_website" name="flm_website" tabindex="-1" autocomplete="off" />
@@ -33,6 +32,7 @@
     </div>
 
     <div class="flm-field">
-        <input type="submit" name="flm_submit" value="提交申请" class="flm-submit-btn" />
+        <input type="hidden" name="flm_submit" value="1" />
+        <button type="submit" class="flm-submit-btn">提交申请</button>
     </div>
 </form>

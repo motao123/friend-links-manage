@@ -8,6 +8,23 @@ if (!class_exists('WP_List_Table')) {
     require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
 }
 
+// 共用的审核通过逻辑
+function flm_approve_link($id) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
+    if ($link && $link->status !== 'approved') {
+        wp_insert_link(array(
+            'link_name'        => $link->name,
+            'link_url'         => $link->url,
+            'link_description' => $link->description,
+            'link_visible'     => 'Y',
+        ));
+        $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
+    }
+}
+
 class FLM_List_Table extends WP_List_Table {
 
     public function __construct() {
@@ -85,26 +102,22 @@ class FLM_List_Table extends WP_List_Table {
         if ($item->status === 'pending') {
             $actions['approve'] = sprintf(
                 '<a href="%s" class="flm-action-approve">%s</a>',
-                $this->get_action_url('approve', $item->id),
-                '通过'
+                $this->get_action_url('approve', $item->id), '通过'
             );
             $actions['reject'] = sprintf(
                 '<a href="%s" class="flm-action-reject">%s</a>',
-                $this->get_action_url('reject', $item->id),
-                '拒绝'
+                $this->get_action_url('reject', $item->id), '拒绝'
             );
         }
         if ($item->status === 'rejected') {
             $actions['approve'] = sprintf(
                 '<a href="%s" class="flm-action-approve">%s</a>',
-                $this->get_action_url('approve', $item->id),
-                '通过'
+                $this->get_action_url('approve', $item->id), '通过'
             );
         }
         $actions['delete'] = sprintf(
             '<a href="%s" class="flm-action-delete submitdelete">%s</a>',
-            $this->get_action_url('delete', $item->id),
-            '删除'
+            $this->get_action_url('delete', $item->id), '删除'
         );
 
         return sprintf('<strong>%s</strong> %s', esc_html($item->name), $this->row_actions($actions));
@@ -142,13 +155,7 @@ class FLM_List_Table extends WP_List_Table {
         $table_name = $wpdb->prefix . 'friend_links';
 
         $per_page = 20;
-        $columns = $this->get_columns();
-        $hidden = array();
-        $sortable = $this->get_sortable_columns();
-        $this->_column_headers = array($columns, $hidden, $sortable);
-
-        // 处理批量操作
-        $this->process_bulk_action();
+        $this->_column_headers = array($this->get_columns(), array(), $this->get_sortable_columns());
 
         $where = "WHERE 1=1";
         if (!empty($_REQUEST['status'])) {
@@ -182,81 +189,21 @@ class FLM_List_Table extends WP_List_Table {
         ));
     }
 
-    public function process_bulk_action() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'friend_links';
-
-        // 批量操作
-        if (isset($_POST['flm_ids']) && is_array($_POST['flm_ids'])) {
-            $action = '';
-            if (!empty($_POST['action']) && $_POST['action'] !== '-1') {
-                $action = sanitize_text_field($_POST['action']);
-            } elseif (!empty($_POST['action2']) && $_POST['action2'] !== '-1') {
-                $action = sanitize_text_field($_POST['action2']);
-            }
-            if (!$action || !in_array($action, array('approve', 'reject', 'delete'), true)) {
-                return;
-            }
-
-            check_admin_referer('bulk-friend-links');
-
-            if (!current_user_can('manage_options')) {
-                wp_die('您没有权限执行此操作。');
-            }
-
-            $ids = array_map('intval', $_POST['flm_ids']);
-            $count = 0;
-
-            foreach ($ids as $id) {
-                if ($action === 'approve') {
-                    $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
-                    if ($link) {
-                        wp_insert_link(array(
-                            'link_name'        => $link->name,
-                            'link_url'         => $link->url,
-                            'link_description' => $link->description,
-                            'link_visible'     => 'Y',
-                        ));
-                        $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
-                        $count++;
-                    }
-                } elseif ($action === 'reject') {
-                    $wpdb->update($table_name, array('status' => 'rejected'), array('id' => $id));
-                    $count++;
-                } elseif ($action === 'delete') {
-                    $wpdb->delete($table_name, array('id' => $id));
-                    $count++;
-                }
-            }
-
-            $labels = array('approve' => '通过', 'reject' => '拒绝', 'delete' => '删除');
-            $redirect = wp_get_referer() ?: admin_url('admin.php?page=friend-links-manager');
-            $redirect = add_query_arg('flm_notice', urlencode(sprintf('已%s %d 条链接', $labels[$action], $count)), $redirect);
-            wp_safe_redirect($redirect);
-            exit;
-        }
-    }
-
     public function no_items() {
         echo '<div class="flm-empty-state"><p>暂无友情链接申请</p></div>';
     }
 }
 
-// 注册后台菜单
 add_action('admin_menu', 'flm_admin_menu');
 function flm_admin_menu() {
     add_menu_page(
-        '友情链接管理',
-        '友情链接',
-        'manage_options',
-        'friend-links-manager',
-        'flm_admin_page',
-        'dashicons-admin-links',
-        6
+        '友情链接管理', '友情链接', 'manage_options',
+        'friend-links-manager', 'flm_admin_page',
+        'dashicons-admin-links', 6
     );
 }
 
-// 在 admin_init 处理单条操作（任何输出之前，redirect 不会失败）
+// 单条操作：admin_init 阶段处理，确保 redirect 在 headers sent 之前
 add_action('admin_init', 'flm_handle_single_action');
 function flm_handle_single_action() {
     if (!is_admin() || !isset($_GET['page']) || $_GET['page'] !== 'friend-links-manager') {
@@ -268,33 +215,21 @@ function flm_handle_single_action() {
 
     global $wpdb;
     $table_name = $wpdb->prefix . 'friend_links';
-
     $action = sanitize_text_field($_GET['action']);
     $id = intval($_GET['id']);
 
     if (!in_array($action, array('approve', 'reject', 'delete'), true)) {
         return;
     }
-
     if (!wp_verify_nonce($_GET['flm_nonce'], 'flm_' . $action . '_' . $id)) {
         wp_die('安全验证失败，请重试。');
     }
-
     if (!current_user_can('manage_options')) {
         wp_die('您没有权限执行此操作。');
     }
 
     if ($action === 'approve') {
-        $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
-        if ($link) {
-            wp_insert_link(array(
-                'link_name'        => $link->name,
-                'link_url'         => $link->url,
-                'link_description' => $link->description,
-                'link_visible'     => 'Y',
-            ));
-            $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
-        }
+        flm_approve_link($id);
         $msg = '链接已通过审核';
     } elseif ($action === 'reject') {
         $wpdb->update($table_name, array('status' => 'rejected'), array('id' => $id));
@@ -308,13 +243,59 @@ function flm_handle_single_action() {
     exit;
 }
 
+// 批量操作：admin_post 阶段处理
+add_action('admin_post_flm_bulk_action', 'flm_handle_bulk_action');
+function flm_handle_bulk_action() {
+    if (!current_user_can('manage_options')) {
+        wp_die('您没有权限执行此操作。');
+    }
+
+    check_admin_referer('bulk-friend-links');
+
+    if (!isset($_POST['flm_ids']) || !is_array($_POST['flm_ids'])) {
+        wp_safe_redirect(admin_url('admin.php?page=friend-links-manager'));
+        exit;
+    }
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $action = '';
+    if (!empty($_POST['action']) && $_POST['action'] !== '-1') {
+        $action = sanitize_text_field($_POST['action']);
+    } elseif (!empty($_POST['action2']) && $_POST['action2'] !== '-1') {
+        $action = sanitize_text_field($_POST['action2']);
+    }
+    if (!$action || !in_array($action, array('approve', 'reject', 'delete'), true)) {
+        wp_safe_redirect(admin_url('admin.php?page=friend-links-manager'));
+        exit;
+    }
+
+    $ids = array_map('intval', $_POST['flm_ids']);
+    $count = 0;
+
+    foreach ($ids as $id) {
+        if ($action === 'approve') {
+            flm_approve_link($id);
+            $count++;
+        } elseif ($action === 'reject') {
+            $wpdb->update($table_name, array('status' => 'rejected'), array('id' => $id));
+            $count++;
+        } elseif ($action === 'delete') {
+            $wpdb->delete($table_name, array('id' => $id));
+            $count++;
+        }
+    }
+
+    $labels = array('approve' => '通过', 'reject' => '拒绝', 'delete' => '删除');
+    wp_safe_redirect(admin_url('admin.php?page=friend-links-manager&flm_notice=' . urlencode(sprintf('已%s %d 条链接', $labels[$action], $count))));
+    exit;
+}
+
 function flm_admin_page() {
     if (!current_user_can('manage_options')) {
         wp_die('您没有权限访问此页面。');
     }
-
-    // 清理 URL 中残留的操作参数，避免 WP_List_Table 误判
-    unset($_GET['action'], $_GET['id'], $_GET['flm_nonce']);
 
     if (isset($_GET['flm_notice'])) {
         $notice = sanitize_text_field(urldecode($_GET['flm_notice']));
@@ -327,15 +308,16 @@ function flm_admin_page() {
     $list_table = new FLM_List_Table();
     $list_table->prepare_items();
 
-    echo '<form id="flm-list-form" method="post">';
+    echo '<form id="flm-list-form" method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
     wp_nonce_field('bulk-friend-links');
+    echo '<input type="hidden" name="action" value="flm_bulk_action" />';
+    echo '<input type="hidden" name="page" value="friend-links-manager" />';
     $list_table->display();
     echo '</form>';
 
     echo '</div>';
 }
 
-// 后台内联样式与脚本
 add_action('admin_head', 'flm_admin_styles');
 function flm_admin_styles() {
     $screen = get_current_screen();
@@ -344,38 +326,18 @@ function flm_admin_styles() {
     }
     ?>
     <style>
-    .flm-badge {
-        display: inline-block;
-        padding: 2px 10px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 600;
-        line-height: 1.6;
-    }
+    .flm-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; line-height: 1.6; }
     .flm-badge-pending  { background: #fff3cd; color: #856404; }
     .flm-badge-approved { background: #d4edda; color: #155724; }
     .flm-badge-rejected { background: #f8d7da; color: #721c24; }
     .flm-action-approve { color: #00a32a !important; }
     .flm-action-reject  { color: #dba617 !important; }
     .flm-action-delete  { color: #d63638 !important; }
-    .flm-empty-state {
-        text-align: center;
-        padding: 40px 20px;
-        color: #999;
-        font-size: 14px;
-    }
-    .flm-empty-state::before {
-        content: "\f103";
-        font-family: dashicons;
-        font-size: 48px;
-        display: block;
-        margin-bottom: 10px;
-        color: #ccc;
-    }
+    .flm-empty-state { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
+    .flm-empty-state::before { content: "\f103"; font-family: dashicons; font-size: 48px; display: block; margin-bottom: 10px; color: #ccc; }
     </style>
     <script>
     jQuery(function($) {
-        // 筛选按钮通过 GET 导航而非 POST 提交
         $('#flm-list-form').on('click', '#flm-filter-submit', function(e) {
             e.preventDefault();
             var status = $('#flm-status-filter').val();
