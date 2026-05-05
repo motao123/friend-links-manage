@@ -33,21 +33,6 @@
     </div>
 
     <div class="flm-field">
-        <button type="submit" name="flm_submit" class="flm-submit-btn">提交申请</button>
+        <input type="submit" name="flm_submit" value="提交申请" class="flm-submit-btn" />
     </div>
 </form>
-
-<script>
-(function() {
-    var form = document.getElementById('flm-form');
-    if (form) {
-        form.addEventListener('submit', function() {
-            var btn = form.querySelector('.flm-submit-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '提交中...';
-            }
-        });
-    }
-})();
-</script>

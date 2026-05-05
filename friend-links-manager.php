@@ -27,17 +27,16 @@ require_once FLM_PLUGIN_DIR . 'includes/frontend-page.php';
 add_action('init', 'flm_handle_form_submit_early');
 function flm_handle_form_submit_early() {
     $log = WP_CONTENT_DIR . '/flm-debug.log';
-    $method = $_SERVER['REQUEST_METHOD'];
-    $has_submit = isset($_POST['flm_submit']) ? 'YES' : 'NO';
-    $post_keys = implode(',', array_keys($_POST));
-    file_put_contents($log, date('H:i:s') . " [init] method=$method flm_submit=$has_submit POST_KEYS=[$post_keys]\n", FILE_APPEND);
 
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['flm_submit'])) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['flm_nonce'])) {
         return;
     }
 
-    $log = WP_CONTENT_DIR . '/flm-debug.log';
-    file_put_contents($log, date('H:i:s') . " [init] POST收到\n", FILE_APPEND);
+    if (!wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
+        return;
+    }
+
+    file_put_contents($log, date('H:i:s') . " [init] 友链提交开始处理\n", FILE_APPEND);
 
     // 蜜罐检查
     $honeypot = isset($_POST['flm_website']) ? $_POST['flm_website'] : '';
@@ -47,14 +46,6 @@ function flm_handle_form_submit_early() {
         wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
         exit;
     }
-
-    // nonce
-    if (!isset($_POST['flm_nonce']) || !wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
-        file_put_contents($log, date('H:i:s') . " Nonce失败\n", FILE_APPEND);
-        wp_redirect(add_query_arg('flm_status', 'nonce_error', get_permalink()));
-        exit;
-    }
-    file_put_contents($log, date('H:i:s') . " Nonce通过\n", FILE_APPEND);
 
     $name        = sanitize_text_field($_POST['flm_name']);
     $url         = esc_url_raw($_POST['flm_url']);
