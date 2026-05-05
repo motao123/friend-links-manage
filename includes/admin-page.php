@@ -186,50 +186,6 @@ class FLM_List_Table extends WP_List_Table {
         global $wpdb;
         $table_name = $wpdb->prefix . 'friend_links';
 
-        // 单条操作
-        if (isset($_GET['action']) && isset($_GET['id']) && isset($_GET['flm_nonce'])) {
-            $action = sanitize_text_field($_GET['action']);
-            $id = intval($_GET['id']);
-
-            if (!in_array($action, array('approve', 'reject', 'delete'), true)) {
-                return;
-            }
-
-            if (!wp_verify_nonce($_GET['flm_nonce'], 'flm_' . $action . '_' . $id)) {
-                wp_die('安全验证失败，请重试。');
-            }
-
-            if (!current_user_can('manage_options')) {
-                wp_die('您没有权限执行此操作。');
-            }
-
-            if ($action === 'approve') {
-                $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
-                if ($link) {
-                    wp_insert_link(array(
-                        'link_name'        => $link->name,
-                        'link_url'         => $link->url,
-                        'link_description' => $link->description,
-                        'link_visible'     => 'Y',
-                    ));
-                    $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
-                }
-                $msg = '链接已通过审核';
-            } elseif ($action === 'reject') {
-                $wpdb->update($table_name, array('status' => 'rejected'), array('id' => $id));
-                $msg = '链接已拒绝';
-            } elseif ($action === 'delete') {
-                $wpdb->delete($table_name, array('id' => $id));
-                $msg = '链接已删除';
-            }
-
-            $redirect = wp_get_referer() ?: admin_url('admin.php?page=friend-links-manager');
-            $redirect = remove_query_arg(array('action', 'id', 'flm_nonce'), $redirect);
-            $redirect = add_query_arg('flm_notice', urlencode($msg), $redirect);
-            wp_safe_redirect($redirect);
-            exit;
-        }
-
         // 批量操作
         if (isset($_POST['flm_ids']) && is_array($_POST['flm_ids'])) {
             $action = '';
@@ -300,9 +256,71 @@ function flm_admin_menu() {
     );
 }
 
+// 处理单条操作（在页面渲染前执行）
+function flm_handle_single_action() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $action = sanitize_text_field($_GET['action']);
+    $id = intval($_GET['id']);
+
+    if (!in_array($action, array('approve', 'reject', 'delete'), true)) {
+        return;
+    }
+
+    if (!wp_verify_nonce($_GET['flm_nonce'], 'flm_' . $action . '_' . $id)) {
+        wp_die('安全验证失败，请重试。');
+    }
+
+    if (!current_user_can('manage_options')) {
+        wp_die('您没有权限执行此操作。');
+    }
+
+    if ($action === 'approve') {
+        $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
+        if ($link) {
+            wp_insert_link(array(
+                'link_name'        => $link->name,
+                'link_url'         => $link->url,
+                'link_description' => $link->description,
+                'link_visible'     => 'Y',
+            ));
+            $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
+        }
+        $msg = '链接已通过审核';
+    } elseif ($action === 'reject') {
+        $wpdb->update($table_name, array('status' => 'rejected'), array('id' => $id));
+        $msg = '链接已拒绝';
+    } elseif ($action === 'delete') {
+        $wpdb->delete($table_name, array('id' => $id));
+        $msg = '链接已删除';
+    }
+
+    $redirect = admin_url('admin.php?page=friend-links-manager&flm_notice=' . urlencode($msg));
+    wp_safe_redirect($redirect);
+    exit;
+}
+
 function flm_admin_page() {
     if (!current_user_can('manage_options')) {
         wp_die('您没有权限访问此页面。');
+    }
+
+    // 处理单条操作（通过/拒绝/删除）—— 在渲染列表前处理并重定向
+    if (isset($_GET['action']) && isset($_GET['id']) && isset($_GET['flm_nonce']) && isset($_GET['page']) && $_GET['page'] === 'friend-links-manager') {
+        flm_handle_single_action();
+        wp_die('操作处理异常');
+    }
+
+    // 清理 URL 中残留的操作参数，避免 WP_List_Table 误判
+    if (isset($_GET['action'])) {
+        unset($_GET['action']);
+    }
+    if (isset($_GET['id'])) {
+        unset($_GET['id']);
+    }
+    if (isset($_GET['flm_nonce'])) {
+        unset($_GET['flm_nonce']);
     }
 
     if (isset($_GET['flm_notice'])) {

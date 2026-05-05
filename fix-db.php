@@ -148,8 +148,44 @@ if ($cache_active) {
     echo '<p class="ok">已调用 wp_cache_flush()</p>';
 }
 
-// ========== 7. 后台管理页面链接 ==========
-echo '<h2>7. 快捷操作</h2>';
+// ========== 7. 后台管理页面渲染测试 ==========
+echo '<h2>7. 后台管理页面渲染测试</h2>';
+
+// 模拟后台页面的渲染逻辑，捕获错误
+echo '<p>尝试实例化 FLM_List_Table 并 prepare_items()...</p>';
+
+try {
+    if (!class_exists('FLM_List_Table')) {
+        echo '<p class="err">FLM_List_Table 类不存在！admin-page.php 可能未加载</p>';
+    } else {
+        // 清除 action/id 参数，避免 process_bulk_action 干扰
+        $old_get = $_GET;
+        unset($_GET['action'], $_GET['id'], $_GET['flm_nonce']);
+
+        $list_table = new FLM_List_Table();
+        echo '<p class="ok">FLM_List_Table 实例化成功</p>';
+
+        $list_table->prepare_items();
+        echo '<p class="ok">prepare_items() 成功</p>';
+        echo '<p>总记录数: ' . esc_html($list_table->get_pagination_arg('total_items')) . '</p>';
+
+        if (empty($list_table->items)) {
+            echo '<p class="warn">items 为空，但表中有数据，说明查询可能有问题</p>';
+        } else {
+            echo '<p class="ok">items 有 ' . count($list_table->items) . ' 条记录</p>';
+        }
+
+        // 恢复 $_GET
+        $_GET = $old_get;
+    }
+} catch (Exception $e) {
+    echo '<p class="err">异常: ' . esc_html($e->getMessage()) . '</p>';
+} catch (Error $e) {
+    echo '<p class="err">致命错误: ' . esc_html($e->getMessage()) . ' 在 ' . esc_html($e->getFile()) . ':' . $e->getLine() . '</p>';
+}
+
+// ========== 8. 后台管理页面链接 ==========
+echo '<h2>8. 快捷操作</h2>';
 echo '<p><a href="' . admin_url('admin.php?page=friend-links-manager') . '" target="_blank">打开后台友情链接管理页</a></p>';
 echo '<p><a href="https://imotao.com/friend-links-apply" target="_blank">打开前台申请页面</a></p>';
 
