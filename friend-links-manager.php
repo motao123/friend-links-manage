@@ -44,6 +44,9 @@ function flm_activate() {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql);
 
+    // dbDelta 可能因格式问题静默失败，手动补列
+    flm_add_missing_columns($table_name);
+
     // 创建前台页面
     if (!get_page_by_path('friend-links-apply')) {
         wp_insert_post(array(
@@ -57,6 +60,30 @@ function flm_activate() {
     }
 
     update_option('flm_version', FLM_VERSION);
+}
+
+// 手动检测并添加缺失的列（从 v1.0 升级时 dbDelta 可能不生效）
+function flm_add_missing_columns($table_name) {
+    global $wpdb;
+
+    $columns = $wpdb->get_col("DESC $table_name", 0);
+    $missing = array(
+        'logo_url'   => "ALTER TABLE $table_name ADD COLUMN logo_url varchar(255) DEFAULT '' AFTER url",
+        'email'      => "ALTER TABLE $table_name ADD COLUMN email varchar(100) DEFAULT '' AFTER logo_url",
+        'created_at' => "ALTER TABLE $table_name ADD COLUMN created_at datetime DEFAULT CURRENT_TIMESTAMP AFTER status",
+    );
+
+    foreach ($missing as $col => $sql) {
+        if (!in_array($col, $columns, true)) {
+            $wpdb->query($sql);
+        }
+    }
+
+    // v1.0 name 是 varchar(255)，v2.0 改为 varchar(100)
+    $row = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'name'");
+    if ($row && preg_match('/varchar\((\d+)\)/', $row->Type, $m) && (int) $m[1] > 100) {
+        $wpdb->query("ALTER TABLE $table_name MODIFY name varchar(100) NOT NULL");
+    }
 }
 
 // 插件升级：自动应用数据库变更
