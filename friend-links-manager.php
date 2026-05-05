@@ -20,6 +20,87 @@ define('FLM_PLUGIN_URL', plugin_dir_url(__FILE__));
 require_once FLM_PLUGIN_DIR . 'includes/admin-page.php';
 require_once FLM_PLUGIN_DIR . 'includes/frontend-page.php';
 
+// 前台表单提交处理 —— 挂在 init 上，最早时机，避免 headers already sent
+add_action('init', 'flm_handle_form_submit_early');
+function flm_handle_form_submit_early() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['flm_submit'])) {
+        return;
+    }
+
+    $log = WP_CONTENT_DIR . '/flm-debug.log';
+    file_put_contents($log, date('H:i:s') . " [init] POST收到\n", FILE_APPEND);
+
+    // 蜜罐检查
+    $honeypot = isset($_POST['flm_website']) ? $_POST['flm_website'] : '';
+    file_put_contents($log, date('H:i:s') . " 蜜罐值=[$honeypot]\n", FILE_APPEND);
+    if (!empty($honeypot)) {
+        file_put_contents($log, date('H:i:s') . " 蜜罐触发，丢弃\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+        exit;
+    }
+
+    // nonce
+    if (!isset($_POST['flm_nonce']) || !wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
+        file_put_contents($log, date('H:i:s') . " Nonce失败\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', 'nonce_error', get_permalink()));
+        exit;
+    }
+    file_put_contents($log, date('H:i:s') . " Nonce通过\n", FILE_APPEND);
+
+    $name        = sanitize_text_field($_POST['flm_name']);
+    $url         = esc_url_raw($_POST['flm_url']);
+    $logo_url    = isset($_POST['flm_logo_url']) ? esc_url_raw($_POST['flm_logo_url']) : '';
+    $email       = isset($_POST['flm_email']) ? sanitize_email($_POST['flm_email']) : '';
+    $description = isset($_POST['flm_description']) ? sanitize_textarea_field($_POST['flm_description']) : '';
+
+    // 校验
+    $error = '';
+    if (mb_strlen($name) > 100) $error = 'name_too_long';
+    elseif (empty($name) || empty($url)) $error = 'empty_fields';
+    elseif (!filter_var($url, FILTER_VALIDATE_URL)) $error = 'invalid_url';
+
+    if ($error) {
+        file_put_contents($log, date('H:i:s') . " 校验失败: $error\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', $error, get_permalink()));
+        exit;
+    }
+    file_put_contents($log, date('H:i:s') . " 校验通过 name=$name url=$url\n", FILE_APPEND);
+
+    // 频率限制
+    $rate_key = 'flm_rate_' . md5($_SERVER['REMOTE_ADDR']);
+    if (get_transient($rate_key)) {
+        file_put_contents($log, date('H:i:s') . " 频率限制\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', 'rate_limit', get_permalink()));
+        exit;
+    }
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE url = %s", $url));
+    if ($existing) {
+        file_put_contents($log, date('H:i:s') . " URL重复\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', 'duplicate', get_permalink()));
+        exit;
+    }
+
+    $inserted = $wpdb->insert($table_name, array(
+        'name' => $name, 'url' => $url, 'logo_url' => $logo_url,
+        'email' => $email, 'description' => $description,
+        'status' => 'pending', 'created_at' => current_time('mysql'),
+    ), array('%s','%s','%s','%s','%s','%s','%s'));
+
+    if ($inserted) {
+        file_put_contents($log, date('H:i:s') . " 插入成功! ID=" . $wpdb->insert_id . "\n", FILE_APPEND);
+        set_transient($rate_key, time(), 60);
+        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+    } else {
+        file_put_contents($log, date('H:i:s') . " 插入失败: " . $wpdb->last_error . "\n", FILE_APPEND);
+        wp_redirect(add_query_arg('flm_status', 'db_error', get_permalink()));
+    }
+    exit;
+}
+
 // 插件激活：创建/升级数据库表、创建前台页面
 register_activation_hook(__FILE__, 'flm_activate');
 function flm_activate() {
