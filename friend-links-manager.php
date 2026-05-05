@@ -2,7 +2,7 @@
 /*
 Plugin Name: 友情链接管理器
 Description: 允许用户在前台提交友情链接申请，管理员可以在后台审核。支持友链展示、批量操作等。
-Version: 2.0
+Version: 2.1
 Author: 陌涛
 Author URI: https://imotao.com/
 Plugin URI: https://imotao.com/8807.html
@@ -13,12 +13,32 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FLM_VERSION', '2.0');
+define('FLM_VERSION', '2.1');
 define('FLM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('FLM_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 require_once FLM_PLUGIN_DIR . 'includes/admin-page.php';
 require_once FLM_PLUGIN_DIR . 'includes/frontend-page.php';
+
+// 获取当前页面完整 URL（init 阶段 get_permalink 不可靠）
+function flm_get_current_url() {
+    $scheme = is_ssl() ? 'https' : 'http';
+    $host   = wp_unslash($_SERVER['HTTP_HOST']);
+    $uri    = wp_unslash($_SERVER['REQUEST_URI']);
+    return remove_query_arg('flm_status', $scheme . '://' . $host . $uri);
+}
+
+// 获取客户端真实 IP（兼容 CDN / 反向代理）
+function flm_get_client_ip() {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',', wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']));
+        return trim($ips[0]);
+    }
+    if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+        return trim(wp_unslash($_SERVER['HTTP_X_REAL_IP']));
+    }
+    return wp_unslash($_SERVER['REMOTE_ADDR']);
+}
 
 // 前台表单提交处理 —— init 钩子，在任何输出前执行 redirect
 add_action('init', 'flm_handle_form_submit');
@@ -38,7 +58,7 @@ function flm_handle_form_submit() {
 
     // 蜜罐检查
     if (!empty($_POST['flm_website'])) {
-        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+        wp_redirect(add_query_arg('flm_status', 'success', flm_get_current_url()));
         exit;
     }
 
@@ -55,16 +75,18 @@ function flm_handle_form_submit() {
     elseif (!filter_var($url, FILTER_VALIDATE_URL)) $error = 'invalid_url';
     elseif ($logo_url && !filter_var($logo_url, FILTER_VALIDATE_URL)) $error = 'invalid_logo_url';
     elseif ($email && !is_email($email)) $error = 'invalid_email';
+    elseif (mb_strlen($description) > 500) $error = 'desc_too_long';
 
     if ($error) {
-        wp_redirect(add_query_arg('flm_status', $error, get_permalink()));
+        wp_redirect(add_query_arg('flm_status', $error, flm_get_current_url()));
         exit;
     }
 
     // 频率限制：同一 IP 60秒内只能提交一次
-    $rate_key = 'flm_rate_' . $_SERVER['REMOTE_ADDR'];
+    $client_ip = flm_get_client_ip();
+    $rate_key = 'flm_rate_' . $client_ip;
     if (get_transient($rate_key)) {
-        wp_redirect(add_query_arg('flm_status', 'rate_limit', get_permalink()));
+        wp_redirect(add_query_arg('flm_status', 'rate_limit', flm_get_current_url()));
         exit;
     }
 
@@ -73,7 +95,7 @@ function flm_handle_form_submit() {
 
     $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE url = %s", $url));
     if ($existing) {
-        wp_redirect(add_query_arg('flm_status', 'duplicate', get_permalink()));
+        wp_redirect(add_query_arg('flm_status', 'duplicate', flm_get_current_url()));
         exit;
     }
 
@@ -85,9 +107,9 @@ function flm_handle_form_submit() {
 
     if ($inserted) {
         set_transient($rate_key, time(), 60);
-        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+        wp_redirect(add_query_arg('flm_status', 'success', flm_get_current_url()));
     } else {
-        wp_redirect(add_query_arg('flm_status', 'db_error', get_permalink()));
+        wp_redirect(add_query_arg('flm_status', 'db_error', flm_get_current_url()));
     }
     exit;
 }

@@ -1,4 +1,4 @@
-<form id="flm-form" method="post" novalidate>
+<form id="flm-form" method="post">
     <?php wp_nonce_field('flm_submit_form', 'flm_nonce'); ?>
 
     <div class="flm-honeypot" aria-hidden="true">
@@ -36,3 +36,32 @@
         <button type="submit" class="flm-submit-btn">提交申请</button>
     </div>
 </form>
+
+<script>
+(function() {
+    var form = document.getElementById('flm-form');
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+        var name = form.querySelector('#flm_name');
+        var url = form.querySelector('#flm_url');
+        var btn = form.querySelector('.flm-submit-btn');
+
+        if (!name.value.trim()) {
+            e.preventDefault();
+            name.focus();
+            return;
+        }
+        if (!url.value.trim()) {
+            e.preventDefault();
+            url.focus();
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '提交中...';
+        }
+    });
+})();
+</script>

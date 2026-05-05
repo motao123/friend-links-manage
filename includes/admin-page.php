@@ -15,12 +15,15 @@ function flm_approve_link($id) {
 
     $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id));
     if ($link && $link->status !== 'approved') {
-        wp_insert_link(array(
+        $result = wp_insert_link(array(
             'link_name'        => $link->name,
             'link_url'         => $link->url,
             'link_description' => $link->description,
             'link_visible'     => 'Y',
         ));
+        if (is_wp_error($result)) {
+            error_log('FLM: wp_insert_link failed for ID ' . $id . ' - ' . $result->get_error_message());
+        }
         $wpdb->update($table_name, array('status' => 'approved'), array('id' => $id));
     }
 }
@@ -261,10 +264,13 @@ function flm_handle_bulk_action() {
     $table_name = $wpdb->prefix . 'friend_links';
 
     $action = '';
-    if (!empty($_POST['action']) && $_POST['action'] !== '-1') {
-        $action = sanitize_text_field($_POST['action']);
-    } elseif (!empty($_POST['action2']) && $_POST['action2'] !== '-1') {
+    // $_POST['action'] 被 hidden input 覆盖为 flm_bulk_action（路由标识），操作类型从 action2 读取
+    if (!empty($_POST['action2']) && $_POST['action2'] !== '-1') {
         $action = sanitize_text_field($_POST['action2']);
+    }
+    // 兼容：若 action 不是路由标识，也支持从顶部下拉框读取
+    if (!$action && !empty($_POST['action']) && $_POST['action'] !== '-1' && $_POST['action'] !== 'flm_bulk_action') {
+        $action = sanitize_text_field($_POST['action']);
     }
     if (!$action || !in_array($action, array('approve', 'reject', 'delete'), true)) {
         wp_safe_redirect(admin_url('admin.php?page=friend-links-manager'));
@@ -310,9 +316,11 @@ function flm_admin_page() {
 
     echo '<form id="flm-list-form" method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
     wp_nonce_field('bulk-friend-links');
-    echo '<input type="hidden" name="action" value="flm_bulk_action" />';
     echo '<input type="hidden" name="page" value="friend-links-manager" />';
     $list_table->display();
+    // 放在 display() 之后，确保 $_POST['action'] = flm_bulk_action 用于 admin-post 路由
+    // WP_List_Table 的 <select name="action"> 被此覆盖，批量操作类型从 action2 读取
+    echo '<input type="hidden" name="action" value="flm_bulk_action" />';
     echo '</form>';
 
     echo '</div>';

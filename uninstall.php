@@ -12,3 +12,6 @@ if ($page) {
 }
 
 delete_option('flm_version');
+
+// 清理频率限制 transient
+$wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_flm_rate_%' OR option_name LIKE '_transient_timeout_flm_rate_%'");

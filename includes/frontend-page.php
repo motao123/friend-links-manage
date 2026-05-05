@@ -16,6 +16,7 @@ function flm_frontend_form() {
             'invalid_url'     => array('type' => 'error',   'text' => '请输入有效的URL！'),
             'invalid_logo_url'=> array('type' => 'error',   'text' => 'Logo URL 格式不正确！'),
             'invalid_email'   => array('type' => 'error',   'text' => '邮箱格式不正确！'),
+            'desc_too_long'   => array('type' => 'error',   'text' => '网站描述不能超过500个字符！'),
             'rate_limit'      => array('type' => 'error',   'text' => '提交过于频繁，请稍后再试！'),
             'duplicate'       => array('type' => 'error',   'text' => '该URL已经提交过了，请勿重复提交！'),
             'db_error'        => array('type' => 'error',   'text' => '提交失败，请稍后重试！'),
@@ -36,6 +37,12 @@ function flm_frontend_form() {
             $message['type'] === 'success' ? '&#10003;' : '&#10007;',
             esc_html($message['text'])
         );
+        $output .= '<script>';
+        $output .= '(function(){';
+        $output .= 'setTimeout(function(){var t=document.querySelector(".flm-toast");if(t){t.style.opacity="0";setTimeout(function(){t.style.display="none";},400);}},5000);';
+        $output .= 'if(window.history.replaceState)window.history.replaceState(null,null,window.location.pathname);';
+        $output .= '})();';
+        $output .= '</script>';
     }
 
     ob_start();
@@ -80,7 +87,7 @@ function flm_display_links($atts) {
 
         $html .= '<a class="flm-link-card" href="' . esc_url($link->url) . '" target="_blank" rel="noopener">';
         if ($link->logo_url) {
-            $html .= '<img class="flm-link-logo" src="' . esc_url($link->logo_url) . '" alt="' . esc_attr($link->name) . '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />';
+            $html .= '<img class="flm-link-logo" src="' . esc_url($link->logo_url) . '" alt="' . esc_attr($link->name) . '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />';
             $html .= '<div class="flm-link-logo flm-link-logo-fallback" style="display:none">' . esc_html($initial) . '</div>';
         } else {
             $html .= '<div class="flm-link-logo flm-link-logo-fallback">' . esc_html($initial) . '</div>';
