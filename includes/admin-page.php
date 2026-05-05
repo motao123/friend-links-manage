@@ -256,8 +256,16 @@ function flm_admin_menu() {
     );
 }
 
-// 处理单条操作（在页面渲染前执行）
+// 在 admin_init 处理单条操作（任何输出之前，redirect 不会失败）
+add_action('admin_init', 'flm_handle_single_action');
 function flm_handle_single_action() {
+    if (!is_admin() || !isset($_GET['page']) || $_GET['page'] !== 'friend-links-manager') {
+        return;
+    }
+    if (!isset($_GET['action']) || !isset($_GET['id']) || !isset($_GET['flm_nonce'])) {
+        return;
+    }
+
     global $wpdb;
     $table_name = $wpdb->prefix . 'friend_links';
 
@@ -296,8 +304,7 @@ function flm_handle_single_action() {
         $msg = '链接已删除';
     }
 
-    $redirect = admin_url('admin.php?page=friend-links-manager&flm_notice=' . urlencode($msg));
-    wp_safe_redirect($redirect);
+    wp_safe_redirect(admin_url('admin.php?page=friend-links-manager&flm_notice=' . urlencode($msg)));
     exit;
 }
 
@@ -306,22 +313,8 @@ function flm_admin_page() {
         wp_die('您没有权限访问此页面。');
     }
 
-    // 处理单条操作（通过/拒绝/删除）—— 在渲染列表前处理并重定向
-    if (isset($_GET['action']) && isset($_GET['id']) && isset($_GET['flm_nonce']) && isset($_GET['page']) && $_GET['page'] === 'friend-links-manager') {
-        flm_handle_single_action();
-        wp_die('操作处理异常');
-    }
-
     // 清理 URL 中残留的操作参数，避免 WP_List_Table 误判
-    if (isset($_GET['action'])) {
-        unset($_GET['action']);
-    }
-    if (isset($_GET['id'])) {
-        unset($_GET['id']);
-    }
-    if (isset($_GET['flm_nonce'])) {
-        unset($_GET['flm_nonce']);
-    }
+    unset($_GET['action'], $_GET['id'], $_GET['flm_nonce']);
 
     if (isset($_GET['flm_notice'])) {
         $notice = sanitize_text_field(urldecode($_GET['flm_notice']));

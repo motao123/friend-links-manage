@@ -3,93 +3,110 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// 安全重定向：headers_sent 时用 JS 回退
-function flm_safe_redirect($url) {
-    if (!headers_sent()) {
-        wp_redirect($url);
-    } else {
-        echo '<script>window.location.href="' . esc_js($url) . '";</script>';
+// 在 init 阶段处理前台表单提交（任何输出之前），避免 headers already sent
+add_action('template_redirect', 'flm_handle_form_submit');
+function flm_handle_form_submit() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['flm_submit'])) {
+        return;
     }
+
+    // 蜜罐检查
+    if (!empty($_POST['flm_website'])) {
+        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+        exit;
+    }
+
+    if (!isset($_POST['flm_nonce']) || !wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
+        wp_redirect(add_query_arg('flm_status', 'nonce_error', get_permalink()));
+        exit;
+    }
+
+    $name        = sanitize_text_field($_POST['flm_name']);
+    $url         = esc_url_raw($_POST['flm_url']);
+    $logo_url    = isset($_POST['flm_logo_url']) ? esc_url_raw($_POST['flm_logo_url']) : '';
+    $email       = isset($_POST['flm_email']) ? sanitize_email($_POST['flm_email']) : '';
+    $description = isset($_POST['flm_description']) ? sanitize_textarea_field($_POST['flm_description']) : '';
+
+    // 校验
+    $error = '';
+    if (mb_strlen($name) > 100) {
+        $error = 'name_too_long';
+    } elseif (empty($name) || empty($url)) {
+        $error = 'empty_fields';
+    } elseif (!filter_var($url, FILTER_VALIDATE_URL)) {
+        $error = 'invalid_url';
+    } elseif ($logo_url && !filter_var($logo_url, FILTER_VALIDATE_URL)) {
+        $error = 'invalid_logo_url';
+    } elseif ($email && !is_email($email)) {
+        $error = 'invalid_email';
+    }
+
+    if ($error) {
+        wp_redirect(add_query_arg('flm_status', $error, get_permalink()));
+        exit;
+    }
+
+    // 频率限制
+    $rate_key = 'flm_rate_' . md5($_SERVER['REMOTE_ADDR']);
+    if (get_transient($rate_key)) {
+        wp_redirect(add_query_arg('flm_status', 'rate_limit', get_permalink()));
+        exit;
+    }
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'friend_links';
+
+    $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE url = %s", $url));
+    if ($existing) {
+        wp_redirect(add_query_arg('flm_status', 'duplicate', get_permalink()));
+        exit;
+    }
+
+    $inserted = $wpdb->insert(
+        $table_name,
+        array(
+            'name'        => $name,
+            'url'         => $url,
+            'logo_url'    => $logo_url,
+            'email'       => $email,
+            'description' => $description,
+            'status'      => 'pending',
+            'created_at'  => current_time('mysql'),
+        ),
+        array('%s', '%s', '%s', '%s', '%s', '%s', '%s')
+    );
+
+    if ($inserted) {
+        set_transient($rate_key, time(), 60);
+        wp_redirect(add_query_arg('flm_status', 'success', get_permalink()));
+    } else {
+        wp_redirect(add_query_arg('flm_status', 'db_error', get_permalink()));
+    }
+    exit;
 }
 
 // 友链申请表单短代码
 function flm_frontend_form() {
     $message = null;
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['flm_submit'])) {
-        // 蜜罐检查：隐藏字段被填充则为机器人
-        if (!empty($_POST['flm_website'])) {
-            flm_safe_redirect(add_query_arg('flm_status', 'success', get_permalink()));
-            exit;
+    // 根据重定向参数显示提示
+    if (isset($_GET['flm_status'])) {
+        $messages = array(
+            'success'         => array('type' => 'success', 'text' => '申请已提交，等待管理员审核！'),
+            'nonce_error'     => array('type' => 'error',   'text' => '安全验证失败，请重试！'),
+            'empty_fields'    => array('type' => 'error',   'text' => '请填写所有必填字段！'),
+            'name_too_long'   => array('type' => 'error',   'text' => '网站名称不能超过100个字符！'),
+            'invalid_url'     => array('type' => 'error',   'text' => '请输入有效的URL！'),
+            'invalid_logo_url'=> array('type' => 'error',   'text' => 'Logo URL 格式不正确！'),
+            'invalid_email'   => array('type' => 'error',   'text' => '邮箱格式不正确！'),
+            'rate_limit'      => array('type' => 'error',   'text' => '提交过于频繁，请稍后再试！'),
+            'duplicate'       => array('type' => 'error',   'text' => '该URL已经提交过了，请勿重复提交！'),
+            'db_error'        => array('type' => 'error',   'text' => '提交失败，请稍后重试！'),
+        );
+        $status = sanitize_text_field($_GET['flm_status']);
+        if (isset($messages[$status])) {
+            $message = $messages[$status];
         }
-
-        if (!isset($_POST['flm_nonce']) || !wp_verify_nonce($_POST['flm_nonce'], 'flm_submit_form')) {
-            $message = array('type' => 'error', 'text' => '安全验证失败，请重试！');
-        } else {
-            $name        = sanitize_text_field($_POST['flm_name']);
-            $url         = esc_url_raw($_POST['flm_url']);
-            $logo_url    = isset($_POST['flm_logo_url']) ? esc_url_raw($_POST['flm_logo_url']) : '';
-            $email       = isset($_POST['flm_email']) ? sanitize_email($_POST['flm_email']) : '';
-            $description = isset($_POST['flm_description']) ? sanitize_textarea_field($_POST['flm_description']) : '';
-
-            // 长度校验
-            if (mb_strlen($name) > 100) {
-                $message = array('type' => 'error', 'text' => '网站名称不能超过100个字符！');
-            } elseif (empty($name) || empty($url)) {
-                $message = array('type' => 'error', 'text' => '请填写所有必填字段！');
-            } elseif (!filter_var($url, FILTER_VALIDATE_URL)) {
-                $message = array('type' => 'error', 'text' => '请输入有效的URL！');
-            } elseif ($logo_url && !filter_var($logo_url, FILTER_VALIDATE_URL)) {
-                $message = array('type' => 'error', 'text' => 'Logo URL 格式不正确！');
-            } elseif ($email && !is_email($email)) {
-                $message = array('type' => 'error', 'text' => '邮箱格式不正确！');
-            } else {
-                // 频率限制：同一 IP 60秒内只能提交一次
-                $last_submit = get_transient('flm_rate_' . md5($_SERVER['REMOTE_ADDR']));
-                if ($last_submit) {
-                    $message = array('type' => 'error', 'text' => '提交过于频繁，请稍后再试！');
-                } else {
-                    global $wpdb;
-                    $table_name = $wpdb->prefix . 'friend_links';
-
-                    $existing = $wpdb->get_row($wpdb->prepare(
-                        "SELECT * FROM $table_name WHERE url = %s",
-                        $url
-                    ));
-
-                    if ($existing) {
-                        $message = array('type' => 'error', 'text' => '该URL已经提交过了，请勿重复提交！');
-                    } else {
-                        $inserted = $wpdb->insert(
-                            $table_name,
-                            array(
-                                'name'        => $name,
-                                'url'         => $url,
-                                'logo_url'    => $logo_url,
-                                'email'       => $email,
-                                'description' => $description,
-                                'status'      => 'pending',
-                                'created_at'  => current_time('mysql'),
-                            ),
-                            array('%s', '%s', '%s', '%s', '%s', '%s', '%s')
-                        );
-
-                        if ($inserted) {
-                            set_transient('flm_rate_' . md5($_SERVER['REMOTE_ADDR']), time(), 60);
-                            flm_safe_redirect(add_query_arg('flm_status', 'success', get_permalink()));
-                            exit;
-                        } else {
-                            error_log('[FLM] 插入失败: ' . $wpdb->last_error);
-                            $message = array('type' => 'error', 'text' => '提交失败，请稍后重试！');
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (isset($_GET['flm_status']) && $_GET['flm_status'] === 'success') {
-        $message = array('type' => 'success', 'text' => '申请已提交，等待管理员审核！');
     }
 
     wp_enqueue_style('flm-style', FLM_PLUGIN_URL . 'assets/css/style.css', array(), FLM_VERSION);
