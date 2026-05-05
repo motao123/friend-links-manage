@@ -26,6 +26,12 @@ require_once FLM_PLUGIN_DIR . 'includes/frontend-page.php';
 // 前台表单提交处理 —— 挂在 init 上，最早时机，避免 headers already sent
 add_action('init', 'flm_handle_form_submit_early');
 function flm_handle_form_submit_early() {
+    $log = WP_CONTENT_DIR . '/flm-debug.log';
+    $method = $_SERVER['REQUEST_METHOD'];
+    $has_submit = isset($_POST['flm_submit']) ? 'YES' : 'NO';
+    $post_keys = implode(',', array_keys($_POST));
+    file_put_contents($log, date('H:i:s') . " [init] method=$method flm_submit=$has_submit POST_KEYS=[$post_keys]\n", FILE_APPEND);
+
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['flm_submit'])) {
         return;
     }
